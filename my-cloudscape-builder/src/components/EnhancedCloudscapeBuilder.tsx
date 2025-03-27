@@ -1,5 +1,5 @@
 // File: src/components/EnhancedCloudscapeBuilder.tsx
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 
@@ -20,13 +20,17 @@ import Input from '@cloudscape-design/components/input';
 import Tabs from '@cloudscape-design/components/tabs';
 import HelpPanel from '@cloudscape-design/components/help-panel';
 import Link from '@cloudscape-design/components/link';
-import Icon from '@cloudscape-design/components/icon';
+import Modal from '@cloudscape-design/components/modal';
+import TextContent from '@cloudscape-design/components/text-content';
+import SegmentedControl from '@cloudscape-design/components/segmented-control';
 
-// Configuration and sub–components
+// Configuration and sub-components
 import { componentLibrary } from '../config/componentLibrary';
 import DraggableComponent from './DraggableComponent';
 import DroppableSection from './DroppableSection';
 import useBuilderLogic from './useBuilderLogic';
+import PropertyEditor from './PropertyEditor';
+import ComponentPreview from './ComponentPreview';
 
 const EnhancedCloudscapeBuilder: React.FC = () => {
   const {
@@ -47,6 +51,7 @@ const EnhancedCloudscapeBuilder: React.FC = () => {
     setPreviewMode,
     savedDesigns,
     currentDesignName,
+    setCurrentDesignName,
     saveModalVisible,
     setSaveModalVisible,
     loadModalVisible,
@@ -66,10 +71,187 @@ const EnhancedCloudscapeBuilder: React.FC = () => {
     addNestedComponent,
     generateCode,
     saveDesign,
-    loadDesign,
-    getVisibleModal,
-    buildNavItems
+    loadDesign
   } = useBuilderLogic();
+
+  const [designDescription, setDesignDescription] = useState('');
+  const [codeType, setCodeType] = useState('jsx');
+  const [activeTab, setActiveTab] = useState('components');
+  
+  // Filter components based on search term and category
+  const getFilteredComponents = () => {
+    return componentLibrary.filter(comp => {
+      const matchesSearch = searchTerm === '' || 
+        comp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        comp.category.toLowerCase().includes(searchTerm.toLowerCase());
+        
+      const matchesCategory = categoryFilter === 'all' || comp.category === categoryFilter;
+      
+      return matchesSearch && matchesCategory;
+    });
+  };
+
+  // Build navigation items for the side navigation
+  const buildNavItems = () => {
+    const items = [
+      {
+        type: 'section',
+        text: 'Builder Actions',
+        items: [
+          { type: 'link', text: 'Toggle Dark Mode', href: '#theme' },
+          { type: 'link', text: previewMode ? 'Edit Mode' : 'Preview Mode', href: '#preview' },
+          { type: 'link', text: 'Save Design', href: '#save' },
+          { type: 'link', text: 'Load Design', href: '#load' },
+        ]
+      },
+      {
+        type: 'section',
+        text: 'Sections',
+        items: [
+          { type: 'link', text: 'Content', href: '#section-content' },
+          { type: 'link', text: 'Navigation', href: '#section-navigation' },
+          { type: 'link', text: 'Tools', href: '#section-tools' },
+          { type: 'link', text: 'Breadcrumbs', href: '#section-breadcrumbs' },
+          { type: 'link', text: 'Modals', href: '#section-modals' }
+        ]
+      },
+      {
+        type: 'section',
+        text: 'Component Categories',
+        items: [
+          { type: 'link', text: 'All', href: '#category-all' },
+          { type: 'link', text: 'Layout', href: '#category-layout' },
+          { type: 'link', text: 'Navigation', href: '#category-navigation' },
+          { type: 'link', text: 'Input', href: '#category-input' },
+          { type: 'link', text: 'Data', href: '#category-data' },
+          { type: 'link', text: 'Feedback', href: '#category-feedback' }
+        ]
+      }
+    ];
+
+    // Add component library items based on filter
+    if (getFilteredComponents().length > 0) {
+      items.push({
+        type: 'section',
+        text: 'Components',
+        items: getFilteredComponents().map(comp => ({
+          type: 'link',
+          text: comp.name,
+          href: `#${comp.id}`,
+          info: comp.category
+        }))
+      });
+    }
+
+    return items;
+  };
+
+  // Render visible modal based on state
+  const getVisibleModal = () => {
+    // Save modal
+    if (saveModalVisible) {
+      return (
+        <Modal
+          visible={true}
+          header="Save Design"
+          onDismiss={() => setSaveModalVisible(false)}
+          footer={
+            <Box float="right">
+              <SpaceBetween direction="horizontal" size="xs">
+                <Button variant="link" onClick={() => setSaveModalVisible(false)}>Cancel</Button>
+                <Button variant="primary" onClick={() => {
+                  saveDesign(currentDesignName, designDescription);
+                  setSaveModalVisible(false);
+                }}>Save</Button>
+              </SpaceBetween>
+            </Box>
+          }
+        >
+          <SpaceBetween size="m">
+            <FormField label="Design Name">
+              <Input
+                value={currentDesignName}
+                onChange={({ detail }) => setCurrentDesignName(detail.value)}
+              />
+            </FormField>
+            <FormField label="Description">
+              <Input
+                value={designDescription}
+                onChange={({ detail }) => setDesignDescription(detail.value)}
+                multiline
+              />
+            </FormField>
+          </SpaceBetween>
+        </Modal>
+      );
+    }
+
+    // Load modal
+    if (loadModalVisible) {
+      return (
+        <Modal
+          visible={true}
+          header="Load Design"
+          onDismiss={() => setLoadModalVisible(false)}
+        >
+          {savedDesigns.length === 0 ? (
+            <Box textAlign="center" color="text-status-inactive">No saved designs yet</Box>
+          ) : (
+            <SpaceBetween size="m">
+              {savedDesigns.map(design => (
+                <Container key={design.id} header={<Header>{design.name}</Header>}>
+                  <SpaceBetween size="m">
+                    <TextContent>
+                      <p>{design.description || 'No description'}</p>
+                      <p><i>Created: {new Date(design.date).toLocaleString()}</i></p>
+                    </TextContent>
+                    <Box float="right">
+                      <Button 
+                        onClick={() => {
+                          loadDesign(design.id);
+                          setLoadModalVisible(false);
+                        }}
+                      >
+                        Load
+                      </Button>
+                    </Box>
+                  </SpaceBetween>
+                </Container>
+              ))}
+            </SpaceBetween>
+          )}
+        </Modal>
+      );
+    }
+
+    // Component modal (if a modal is set to be visible in the preview)
+    if (previewMode && visibleModalId) {
+      const modal = modals.find(m => m.id === visibleModalId);
+      if (modal) {
+        return (
+          <Modal
+            visible={true}
+            header={modal.props.header || 'Modal'}
+            size={modal.props.size || 'medium'}
+            onDismiss={() => setVisibleModalId(null)}
+          >
+            <ComponentPreview 
+              component={modal} 
+              darkMode={darkMode}
+              onAction={(action) => {
+                // Handle modal actions
+                if (action === 'close') {
+                  setVisibleModalId(null);
+                }
+              }}
+            />
+          </Modal>
+        );
+      }
+    }
+
+    return null;
+  };
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -78,6 +260,7 @@ const EnhancedCloudscapeBuilder: React.FC = () => {
           <SideNavigation
             header={{ text: 'Component Library' }}
             items={buildNavItems()}
+            activeHref={`#section-${activeSection}`}
             onFollow={(e) => {
               e.preventDefault();
               const href = e.detail.href;
@@ -117,7 +300,36 @@ const EnhancedCloudscapeBuilder: React.FC = () => {
             }}
           >
             <Box padding="s">
-              <Input placeholder="Search components..." value={searchTerm} onChange={({ detail }) => setSearchTerm(detail.value)} clearable />
+              <SpaceBetween size="s">
+                <Input 
+                  placeholder="Search components..." 
+                  value={searchTerm} 
+                  onChange={({ detail }) => setSearchTerm(detail.value)} 
+                  clearable 
+                />
+                <SegmentedControl
+                  selectedId={activeTab}
+                  onChange={({ detail }) => setActiveTab(detail.selectedId)}
+                  options={[
+                    { id: 'components', text: 'Components' },
+                    { id: 'structure', text: 'Structure' }
+                  ]}
+                />
+                {activeTab === 'structure' && (
+                  <Box>
+                    <SpaceBetween size="xs">
+                      <Box variant="h4">Current Structure:</Box>
+                      <ul>
+                        <li>Navigation: {appLayoutConfig.navigation.length} components</li>
+                        <li>Content: {appLayoutConfig.content.length} components</li>
+                        <li>Tools: {appLayoutConfig.tools.length} components</li>
+                        <li>Breadcrumbs: {appLayoutConfig.breadcrumbs.length} components</li>
+                        <li>Modals: {modals.length} modals</li>
+                      </ul>
+                    </SpaceBetween>
+                  </Box>
+                )}
+              </SpaceBetween>
             </Box>
           </SideNavigation>
         }
@@ -157,25 +369,61 @@ const EnhancedCloudscapeBuilder: React.FC = () => {
                 }
               >
                 {activeSection === 'modals'
-                  ? <DroppableSection section="modals" components={modals} darkMode={darkMode} onDrop={addComponentToSection} onSelect={selectComponent} onRemove={removeComponent} />
-                  : <DroppableSection section={activeSection} components={appLayoutConfig[activeSection]} darkMode={darkMode} onDrop={addComponentToSection} onSelect={selectComponent} onRemove={removeComponent} />}
+                  ? (
+                    <DroppableSection 
+                      section="modals" 
+                      components={modals} 
+                      darkMode={darkMode} 
+                      onDrop={addComponentToSection} 
+                      onSelect={selectComponent} 
+                      onRemove={removeComponent} 
+                      previewMode={previewMode}
+                    />
+                  )
+                  : (
+                    <DroppableSection 
+                      section={activeSection} 
+                      components={appLayoutConfig[activeSection]} 
+                      darkMode={darkMode} 
+                      onDrop={addComponentToSection} 
+                      onSelect={selectComponent} 
+                      onRemove={removeComponent} 
+                      previewMode={previewMode}
+                    />
+                  )
+                }
               </Container>
               <Grid gridDefinition={[{ colspan: 6 }, { colspan: 6 }]}>
                 <Container header={<Header>Properties</Header>}>
                   {selectedComponent ? (
-                    <Form>
-                      {Object.entries(componentProperties).map(([key, value]) => (
-                        <FormField key={key} label={key}>
-                          <Input value={value?.toString() || ''} onChange={({ detail }) => updateComponentProperty(key, detail.value)} />
-                        </FormField>
-                      ))}
-                    </Form>
+                    <PropertyEditor
+                      component={selectedComponent}
+                      properties={componentProperties}
+                      onPropertyChange={updateComponentProperty}
+                    />
                   ) : (
                     <Box textAlign="center" color="text-status-inactive" padding="m">Select a component to edit properties</Box>
                   )}
                 </Container>
-                <Container header={<Header>Code Preview</Header>}>
-                  <CodeView code={generatedCode} language="jsx" />
+                <Container 
+                  header={
+                    <Header 
+                      actions={
+                        <SegmentedControl
+                          selectedId={codeType}
+                          onChange={({ detail }) => setCodeType(detail.selectedId)}
+                          options={[
+                            { id: 'jsx', text: 'JSX' },
+                            { id: 'tsx', text: 'TSX' }
+                          ]}
+                        />
+                      }
+                    >
+                      Code Preview
+                    </Header>
+                  }
+                >
+                  <CodeView code={generatedCode} language={codeType} />
                 </Container>
               </Grid>
             </SpaceBetween>
@@ -207,6 +455,8 @@ const EnhancedCloudscapeBuilder: React.FC = () => {
                           <li>Click components to edit their properties</li>
                           <li>Drag components to reorder them</li>
                           <li>Toggle preview mode to see your app in action</li>
+                          <li>Use the copy button to copy generated code</li>
+                          <li>Save your designs to reuse them later</li>
                         </ul>
                       </Box>
                     </SpaceBetween>
@@ -248,4 +498,4 @@ const EnhancedCloudscapeBuilder: React.FC = () => {
   );
 };
 
-export default EnhancedCloudscapeBuilder;
+export default EnhancedCloudscapeBuilder; 
